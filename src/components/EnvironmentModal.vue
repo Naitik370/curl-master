@@ -86,6 +86,14 @@
             </div>
           </div>
         </div>
+
+        <!-- Clear all data -->
+        <div class="clear-data-section">
+          <button type="button" class="clear-data-btn" @click="confirmClearAllData">
+            Clear all data
+          </button>
+          <p class="clear-data-hint">Remove all workspaces, collections, history, and environments. Settings reset to defaults.</p>
+        </div>
       </div>
     </div>
 
@@ -118,6 +126,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   updated: []
+  dataCleared: []
 }>();
 
 const environments = ref<any[]>([]);
@@ -192,6 +201,25 @@ const handleModalConfirm = async (value: string) => {
     await modal.action(value);
   }
   modal.show = false;
+};
+
+const confirmClearAllData = () => {
+  openModal({
+    title: 'Clear all data?',
+    message: 'This will delete all workspaces, collections, history, and environments. Settings will be reset to defaults. This cannot be undone.',
+    inputType: '',
+    confirmText: 'Clear all',
+    variant: 'danger',
+    action: async () => {
+      try {
+        await invoke('clear_all_data');
+        close();
+        emit('dataCleared');
+      } catch (error) {
+        console.error('Failed to clear data:', error);
+      }
+    }
+  });
 };
 
 const createNewEnv = () => {
@@ -329,11 +357,14 @@ watch(() => props.isOpen, (newVal) => {
 .modal-body {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .env-layout {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .env-sidebar {
@@ -504,5 +535,32 @@ watch(() => props.isOpen, (newVal) => {
   align-items: center;
   justify-content: center;
   color: #555;
+}
+
+.clear-data-section {
+  padding: 16px 24px;
+  border-top: 1px solid #333;
+  margin-top: auto;
+}
+
+.clear-data-btn {
+  background: transparent;
+  border: 1px solid #5a2a2a;
+  color: #c66;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.clear-data-btn:hover {
+  background: rgba(200, 80, 80, 0.1);
+  border-color: #c66;
+}
+
+.clear-data-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #666;
 }
 </style>

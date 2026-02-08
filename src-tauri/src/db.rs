@@ -622,6 +622,25 @@ pub async fn get_active_variables(workspace_id: &str) -> Result<Vec<(String, Str
     Ok(results)
 }
 
+/// Clear all user data (workspaces, collections, history, environments, etc.) and reset settings to defaults.
+pub async fn clear_all_data() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = get_pool().await?;
+
+    // Delete in order respecting foreign keys
+    sqlx::query("DELETE FROM variable").execute(&pool).await?;
+    sqlx::query("DELETE FROM environment").execute(&pool).await?;
+    sqlx::query("DELETE FROM history").execute(&pool).await?;
+    sqlx::query("DELETE FROM tab_state").execute(&pool).await?;
+    sqlx::query("DELETE FROM request").execute(&pool).await?;
+    sqlx::query("DELETE FROM folder").execute(&pool).await?;
+    sqlx::query("DELETE FROM collection").execute(&pool).await?;
+    sqlx::query("DELETE FROM workspace").execute(&pool).await?;
+    sqlx::query("DELETE FROM settings").execute(&pool).await?;
+
+    initialize_default_settings(&pool).await?;
+    Ok(())
+}
+
 // Delete operations
 pub async fn delete_workspace(id: &str) -> Result<(), sqlx::Error> {
     let pool = get_pool().await?;

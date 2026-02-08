@@ -79,6 +79,7 @@
       :workspace-id="activeWorkspaceId"
       @close="showEnvModal = false"
       @updated="handleEnvUpdated"
+      @data-cleared="handleDataCleared"
     />
   </div>
 </template>
@@ -271,6 +272,13 @@ const handleEnvChanged = () => {
 
 const handleEnvUpdated = () => {
   titlebarRef.value?.refresh();
+};
+
+const handleDataCleared = async () => {
+  tabs.value = [];
+  activeTabId.value = null;
+  await fetchWorkspaces();
+  sidebarRef.value?.refresh();
 };
 
 const handleResponse = (response: any) => {

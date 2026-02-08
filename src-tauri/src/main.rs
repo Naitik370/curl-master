@@ -50,6 +50,7 @@ fn main() {
             commands::get_active_variables,
             commands::import_collection,
             commands::update_request,
+            commands::clear_all_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

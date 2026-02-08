@@ -563,4 +563,10 @@ pub async fn import_collection(collection: ImportCollection) -> Result<String, S
         .map_err(|e| e.to_string())
 }
 
+/// Clear all app data (workspaces, collections, history, environments, settings) and reset to defaults.
+#[tauri::command]
+pub async fn clear_all_data() -> Result<(), String> {
+    db::clear_all_data().await.map_err(|e| e.to_string())
+}
+
 
