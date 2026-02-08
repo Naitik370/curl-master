@@ -206,3 +206,65 @@ pub struct ImportCollection {
     pub folders: Vec<ImportFolder>,
     pub requests: Vec<ImportRequest>,
 }
+
+/// Sync snapshot: workspace + collections (with folders/requests) + environments (with variables).
+/// Serialized as JSON for PUT/GET sync API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceSnapshot {
+    pub workspace: WorkspaceSnapshotMeta,
+    pub collections: Vec<CollectionSnapshot>,
+    pub environments: Vec<EnvironmentSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceSnapshotMeta {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionSnapshot {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub sort_order: i64,
+    pub folders: Vec<FolderSnapshot>,
+    pub requests: Vec<RequestSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FolderSnapshot {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub requests: Vec<RequestSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestSnapshot {
+    pub id: String,
+    pub name: String,
+    pub method: String,
+    pub url: String,
+    pub headers: String,
+    pub params: String,
+    pub body: String,
+    pub auth: Option<String>,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvironmentSnapshot {
+    pub id: String,
+    pub name: String,
+    pub is_active: bool,
+    pub variables: Vec<VariableSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableSnapshot {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    pub is_secret: bool,
+}

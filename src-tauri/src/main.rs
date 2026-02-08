@@ -5,6 +5,7 @@ mod http;
 mod db;
 mod models;
 mod commands;
+mod sync;
 
 
 
@@ -42,7 +43,6 @@ fn main() {
             commands::delete_request,
             commands::get_workspaces,
             commands::create_workspace,
-            commands::create_workspace,
             commands::rename_workspace,
             commands::get_history,
             commands::clear_history,
@@ -51,6 +51,14 @@ fn main() {
             commands::import_collection,
             commands::update_request,
             commands::clear_all_data,
+            commands::get_sync_config,
+            commands::set_sync_config,
+            commands::sync_login,
+            commands::sync_register,
+            commands::sync_logout,
+            commands::pull_workspace,
+            commands::invite_to_workspace,
+            commands::clear_sync_error,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,7 +12,7 @@
         </button>
       </div>
       <div class="sidebar-actions">
-        <button class="refresh-btn" @click="fetchCollections" :class="{ 'rotating': isLoading }" title="Refresh">
+        <button class="refresh-btn" @click="handleRefresh" :class="{ 'rotating': isLoading }" title="Refresh / Sync">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.417A6 6 0 118 2v1z"/>
             <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658a.25.25 0 01-.41-.192z"/>
@@ -67,6 +67,11 @@
             <button v-if="localWorkspaceId !== 'default'" class="workspace-delete-btn" @click="handleDeleteWorkspace" title="Delete Workspace">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5zm-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5z"/>
+              </svg>
+            </button>
+            <button v-if="syncLoggedIn" class="workspace-invite-btn" @click="handleInviteClick" title="Invite to workspace">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12 11v6M9 14h6"/>
               </svg>
             </button>
           </div>
@@ -256,7 +261,8 @@ interface Workspace {
 }
 
 const props = defineProps<{
-  workspaceId: string
+  workspaceId: string;
+  syncLoggedIn?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -332,6 +338,40 @@ const fetchCollections = async () => {
     console.error('Failed to fetch collections:', error);
   } finally {
     isLoading.value = false;
+  }
+};
+
+const handleRefresh = async () => {
+  try {
+    const cfg = await invoke('get_sync_config') as { url: string; hasToken: boolean };
+    if (cfg?.hasToken) {
+      try {
+        await invoke('pull_workspace', { workspaceId: props.workspaceId });
+      } catch (pullErr) {
+        console.error('Sync pull failed:', pullErr);
+        window.alert('Sync failed: ' + (pullErr as Error).message);
+      }
+    }
+  } catch (e) {
+    console.error('Refresh failed:', e);
+  }
+  await fetchCollections();
+};
+
+const handleInviteClick = async () => {
+  const email = window.prompt('Enter email to invite:');
+  if (!email?.trim()) return;
+  try {
+    const link = await invoke('invite_to_workspace', {
+      workspaceId: props.workspaceId,
+      email: email.trim()
+    }) as string;
+    if (link) {
+      await navigator.clipboard.writeText(link);
+      window.alert('Invite link copied to clipboard.');
+    }
+  } catch (e) {
+    window.alert('Invite failed: ' + (e as Error).message);
   }
 };
 
@@ -704,7 +744,7 @@ defineExpose({
   gap: 8px;
 }
 
-.workspace-delete-btn, .workspace-add-btn, .workspace-edit-btn {
+.workspace-delete-btn, .workspace-add-btn, .workspace-edit-btn, .workspace-invite-btn {
   padding: 4px;
   background: transparent;
   border: none;
@@ -721,7 +761,7 @@ defineExpose({
   background: rgba(255, 77, 77, 0.1);
 }
 
-.workspace-add-btn:hover, .workspace-edit-btn:hover {
+.workspace-add-btn:hover, .workspace-edit-btn:hover, .workspace-invite-btn:hover {
   color: #667eea;
   background: rgba(102, 126, 234, 0.1);
 }

@@ -1,5 +1,14 @@
-use crate::{db, http, models::*};
+use crate::{db, http, models::*, sync};
 use std::collections::HashMap;
+
+/// Fire-and-forget push to sync server after a mutating command. Stores last error in settings on failure.
+fn trigger_push(workspace_id: String) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = sync::push_workspace(&workspace_id).await {
+            let _ = db::update_setting("sync_last_error", &e).await;
+        }
+    });
+}
 
 /// Send HTTP request with variable substitution
 #[allow(non_snake_case)]
@@ -199,7 +208,7 @@ pub async fn create_collection(name: String, workspaceId: String) -> Result<Stri
     db::create_collection(&id, &workspaceId, &name, sort_order)
         .await
         .map_err(|e| e.to_string())?;
-    
+    trigger_push(workspaceId.clone());
     Ok(id)
 }
 
@@ -218,7 +227,9 @@ pub async fn create_folder(name: String, collectionId: String) -> Result<String,
     db::create_folder(&id, &collectionId, &name, sort_order)
         .await
         .map_err(|e| e.to_string())?;
-    
+    if let Ok(Some(ws_id)) = db::get_workspace_id_by_collection_id(&collectionId).await {
+        trigger_push(ws_id);
+    }
     Ok(id)
 }
 
@@ -259,7 +270,9 @@ pub async fn save_request(
     )
     .await
     .map_err(|e| e.to_string())?;
-    
+    if let Ok(Some(ws_id)) = db::get_workspace_id_by_collection_id(&collectionId).await {
+        trigger_push(ws_id);
+    }
     Ok(id)
 }
 
@@ -352,9 +365,11 @@ pub async fn get_collections_with_folders(workspaceId: String) -> Result<serde_j
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn ensure_workspace(workspaceId: String) -> Result<String, String> {
-    db::ensure_workspace(&workspaceId)
+    let id = db::ensure_workspace(&workspaceId)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    trigger_push(workspaceId.clone());
+    Ok(id)
 }
 
 /// Create a new environment
@@ -365,6 +380,7 @@ pub async fn create_environment(name: String, workspaceId: String) -> Result<Str
     db::create_environment(&id, &workspaceId, &name)
         .await
         .map_err(|e| e.to_string())?;
+    trigger_push(workspaceId.clone());
     Ok(id)
 }
 
@@ -456,6 +472,9 @@ pub async fn save_variables(
             .await
             .map_err(|e| e.to_string())?;
     }
+    if let Ok(Some(ws_id)) = db::get_workspace_id_by_environment_id(&environmentId).await {
+        trigger_push(ws_id);
+    }
     Ok(())
 }
 
@@ -470,17 +489,27 @@ pub async fn delete_workspace(workspaceId: String) -> Result<(), String> {
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn delete_collection(collectionId: String) -> Result<(), String> {
+    let ws_id = db::get_workspace_id_by_collection_id(&collectionId).await.ok().and_then(|x| x);
     db::delete_collection(&collectionId)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = ws_id {
+        trigger_push(id);
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn delete_folder(folderId: String) -> Result<(), String> {
+    let ws_id = db::get_workspace_id_by_folder_id(&folderId).await.ok().and_then(|x| x);
     db::delete_folder(&folderId)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = ws_id {
+        trigger_push(id);
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -495,6 +524,7 @@ pub async fn update_request(
     body: String,
     auth: Option<String>,
 ) -> Result<(), String> {
+    let ws_id = db::get_workspace_id_by_request_id(&id).await.ok().and_then(|x| x);
     db::update_request(
         &id,
         &name,
@@ -506,15 +536,24 @@ pub async fn update_request(
         auth.as_deref(),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if let Some(wid) = ws_id {
+        trigger_push(wid);
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn delete_request(requestId: String) -> Result<(), String> {
+    let ws_id = db::get_workspace_id_by_request_id(&requestId).await.ok().and_then(|x| x);
     db::delete_request(&requestId)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = ws_id {
+        trigger_push(id);
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -522,7 +561,9 @@ pub async fn delete_request(requestId: String) -> Result<(), String> {
 pub async fn rename_workspace(workspaceId: String, name: String) -> Result<(), String> {
     db::update_workspace_name(&workspaceId, &name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    trigger_push(workspaceId.clone());
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -552,21 +593,115 @@ pub async fn create_workspace(name: String) -> Result<String, String> {
     db::create_workspace(&id, &name)
         .await
         .map_err(|e| e.to_string())?;
+    trigger_push(id.clone());
     Ok(id)
 }
 
 /// Batch import a collection with folders and requests
 #[tauri::command]
 pub async fn import_collection(collection: ImportCollection) -> Result<String, String> {
-    db::import_collection(collection)
+    let workspace_id = collection.workspace_id.clone();
+    let id = db::import_collection(collection)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    trigger_push(workspace_id);
+    Ok(id)
 }
 
 /// Clear all app data (workspaces, collections, history, environments, settings) and reset to defaults.
 #[tauri::command]
 pub async fn clear_all_data() -> Result<(), String> {
     db::clear_all_data().await.map_err(|e| e.to_string())
+}
+
+// --- Sync commands ---
+
+#[tauri::command]
+pub async fn get_sync_config() -> Result<serde_json::Value, String> {
+    let config = sync::get_sync_config().await.map_err(|e| e.to_string())?;
+    let url = match &config {
+        Some((u, _)) => u.clone(),
+        None => db::get_setting("sync_server_url").await.ok().and_then(|s| s).map(|s| s.value).unwrap_or_default(),
+    };
+    let has_token = config.is_some();
+    let last_error = db::get_setting("sync_last_error").await.ok().and_then(|s| s).filter(|s| !s.value.is_empty()).map(|s| s.value).unwrap_or_default();
+    let last_synced_at: Option<i64> = db::get_setting("sync_last_synced_at").await.ok().and_then(|s| s).and_then(|s| s.value.parse().ok());
+    Ok(serde_json::json!({
+        "url": url,
+        "hasToken": has_token,
+        "lastError": if last_error.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(last_error) },
+        "lastSyncedAt": last_synced_at
+    }))
+}
+
+#[tauri::command]
+pub async fn set_sync_config(url: Option<String>, token: Option<String>) -> Result<(), String> {
+    sync::set_sync_config(url, token).await
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn sync_login(syncUrl: String, email: String, password: String) -> Result<serde_json::Value, String> {
+    let base = syncUrl.trim_end_matches('/');
+    let client = reqwest::Client::new();
+    let res = client
+        .post(format!("{}/auth/login", base))
+        .json(&serde_json::json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Login failed: {} {}", status, body));
+    }
+    let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let token = json.get("token").and_then(|v| v.as_str()).ok_or("No token in response")?;
+    sync::set_sync_config(Some(syncUrl.clone()), Some(token.to_string())).await?;
+    Ok(serde_json::json!({ "email": json.get("email").and_then(|v| v.as_str()).unwrap_or("") }))
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn sync_register(syncUrl: String, email: String, password: String) -> Result<serde_json::Value, String> {
+    let base = syncUrl.trim_end_matches('/');
+    let client = reqwest::Client::new();
+    let res = client
+        .post(format!("{}/auth/register", base))
+        .json(&serde_json::json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Register failed: {} {}", status, body));
+    }
+    let _: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    sync_login(syncUrl, email, password).await
+}
+
+#[tauri::command]
+pub async fn sync_logout() -> Result<(), String> {
+    sync::set_sync_config(None, Some(String::new())).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_sync_error() -> Result<(), String> {
+    sync::clear_sync_error().await
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn pull_workspace(workspaceId: String) -> Result<(), String> {
+    sync::pull_workspace(&workspaceId).await
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn invite_to_workspace(workspaceId: String, email: String) -> Result<String, String> {
+    sync::invite_to_workspace(&workspaceId, &email).await
 }
 
 

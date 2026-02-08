@@ -1,4 +1,8 @@
-use crate::models::{Setting, ImportCollection, ImportFolder};
+use crate::models::{
+    Setting, ImportCollection, ImportFolder,
+    WorkspaceSnapshot, WorkspaceSnapshotMeta, CollectionSnapshot, FolderSnapshot,
+    RequestSnapshot, EnvironmentSnapshot, VariableSnapshot,
+};
 use sqlx::{sqlite::SqlitePool, Pool, Sqlite};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
@@ -340,6 +344,46 @@ pub async fn get_collections(workspace_id: &str) -> Result<Vec<(String, String, 
     Ok(results)
 }
 
+pub async fn get_workspace_id_by_collection_id(collection_id: &str) -> Result<Option<String>, sqlx::Error> {
+    let pool = get_pool().await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT workspace_id FROM collection WHERE id = ?")
+        .bind(collection_id)
+        .fetch_optional(&pool)
+        .await?;
+    Ok(row.map(|r| r.0))
+}
+
+pub async fn get_workspace_id_by_folder_id(folder_id: &str) -> Result<Option<String>, sqlx::Error> {
+    let pool = get_pool().await?;
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT c.workspace_id FROM folder f JOIN collection c ON f.collection_id = c.id WHERE f.id = ?"
+    )
+    .bind(folder_id)
+    .fetch_optional(&pool)
+    .await?;
+    Ok(row.map(|r| r.0))
+}
+
+pub async fn get_workspace_id_by_request_id(request_id: &str) -> Result<Option<String>, sqlx::Error> {
+    let pool = get_pool().await?;
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT c.workspace_id FROM request r JOIN collection c ON r.collection_id = c.id WHERE r.id = ?"
+    )
+    .bind(request_id)
+    .fetch_optional(&pool)
+    .await?;
+    Ok(row.map(|r| r.0))
+}
+
+pub async fn get_workspace_id_by_environment_id(environment_id: &str) -> Result<Option<String>, sqlx::Error> {
+    let pool = get_pool().await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT workspace_id FROM environment WHERE id = ?")
+        .bind(environment_id)
+        .fetch_optional(&pool)
+        .await?;
+    Ok(row.map(|r| r.0))
+}
+
 // Folder operations
 pub async fn create_folder(
     id: &str,
@@ -620,6 +664,261 @@ pub async fn get_active_variables(workspace_id: &str) -> Result<Vec<(String, Str
     .await?;
 
     Ok(results)
+}
+
+/// Build full workspace snapshot for sync (collections with folders/requests, environments with variables).
+pub async fn get_workspace_snapshot(workspace_id: &str) -> Result<WorkspaceSnapshot, Box<dyn std::error::Error + Send + Sync>> {
+    let pool = get_pool().await?;
+
+    let (id, name): (String, String) = sqlx::query_as(
+        "SELECT id, name FROM workspace WHERE id = ?"
+    )
+    .bind(workspace_id)
+    .fetch_optional(&pool)
+    .await?
+    .ok_or("Workspace not found")?;
+
+    let workspace_meta = WorkspaceSnapshotMeta { id: id.clone(), name };
+
+    let collections_raw = get_collections(workspace_id).await?;
+    let mut collections = Vec::new();
+    for (coll_id, coll_name, _) in collections_raw {
+        let coll_row: Option<(Option<String>, i64)> = sqlx::query_as(
+            "SELECT description, sort_order FROM collection WHERE id = ?"
+        )
+        .bind(&coll_id)
+        .fetch_optional(&pool)
+        .await?;
+        let (description, sort_order) = coll_row.unwrap_or((None, 0));
+
+        let all_reqs = get_requests(&coll_id).await?;
+        let folders_raw = get_folders(&coll_id).await?;
+        let mut folders = Vec::new();
+        for (f_id, f_name, _) in folders_raw {
+            let f_sort: i64 = sqlx::query_scalar("SELECT sort_order FROM folder WHERE id = ?")
+                .bind(&f_id)
+                .fetch_one(&pool)
+                .await?;
+            let requests: Vec<RequestSnapshot> = all_reqs
+                .iter()
+                .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id == &f_id)
+                .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| RequestSnapshot {
+                    id: r_id.clone(),
+                    name: r_name.clone(),
+                    method: r_method.clone(),
+                    url: r_url.clone(),
+                    headers: r_headers.clone(),
+                    params: r_params.clone(),
+                    body: r_body.clone(),
+                    auth: if r_auth.is_empty() { None } else { Some(r_auth.clone()) },
+                    sort_order: 0,
+                })
+                .collect();
+            folders.push(FolderSnapshot {
+                id: f_id,
+                name: f_name,
+                sort_order: f_sort,
+                requests,
+            });
+        }
+        let root_requests: Vec<RequestSnapshot> = all_reqs
+            .into_iter()
+            .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id.is_empty())
+            .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| RequestSnapshot {
+                id: r_id,
+                name: r_name,
+                method: r_method,
+                url: r_url,
+                headers: r_headers,
+                params: r_params,
+                body: r_body,
+                auth: if r_auth.is_empty() { None } else { Some(r_auth) },
+                sort_order: 0,
+            })
+            .collect();
+
+        collections.push(CollectionSnapshot {
+            id: coll_id,
+            name: coll_name,
+            description,
+            sort_order,
+            folders,
+            requests: root_requests,
+        });
+    }
+
+    let envs = get_environments(workspace_id).await?;
+    let mut environments = Vec::new();
+    for (env_id, env_name, is_active) in envs {
+        let vars = get_variables(&env_id).await?;
+        let variables: Vec<VariableSnapshot> = vars
+            .into_iter()
+            .map(|(v_id, key, value, is_secret)| VariableSnapshot {
+                id: v_id,
+                key,
+                value,
+                is_secret,
+            })
+            .collect();
+        environments.push(EnvironmentSnapshot {
+            id: env_id,
+            name: env_name,
+            is_active,
+            variables,
+        });
+    }
+
+    Ok(WorkspaceSnapshot {
+        workspace: workspace_meta,
+        collections,
+        environments,
+    })
+}
+
+/// Replace local workspace data with snapshot (for pull). Deletes then re-inserts.
+pub async fn replace_workspace_from_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let workspace_id = &snapshot.workspace.id;
+    let pool = get_pool().await?;
+
+    let mut tx = pool.begin().await?;
+
+    // Delete existing workspace data (same order as delete_workspace)
+    sqlx::query("DELETE FROM variable WHERE environment_id IN (SELECT id FROM environment WHERE workspace_id = ?)")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM environment WHERE workspace_id = ?")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM request WHERE collection_id IN (SELECT id FROM collection WHERE workspace_id = ?)")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM folder WHERE collection_id IN (SELECT id FROM collection WHERE workspace_id = ?)")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM collection WHERE workspace_id = ?")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM workspace WHERE id = ?")
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // Insert workspace
+    sqlx::query("INSERT INTO workspace (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)")
+        .bind(&snapshot.workspace.id)
+        .bind(&snapshot.workspace.name)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+    // Insert collections, folders, requests
+    for (c_idx, coll) in snapshot.collections.iter().enumerate() {
+        let sort_order = c_idx as i64;
+        sqlx::query(
+            "INSERT INTO collection (id, workspace_id, name, description, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&coll.id)
+        .bind(workspace_id)
+        .bind(&coll.name)
+        .bind(&coll.description)
+        .bind(coll.sort_order)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        for (f_idx, folder) in coll.folders.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO folder (id, collection_id, parent_folder_id, name, sort_order, created_at) VALUES (?, ?, NULL, ?, ?, ?)"
+            )
+            .bind(&folder.id)
+            .bind(&coll.id)
+            .bind(&folder.name)
+            .bind(folder.sort_order)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+            for (r_idx, req) in folder.requests.iter().enumerate() {
+                sqlx::query(
+                    "INSERT INTO request (id, folder_id, collection_id, name, method, url, headers, params, body, auth, sort_order, schema_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
+                )
+                .bind(&req.id)
+                .bind(&folder.id)
+                .bind(&coll.id)
+                .bind(&req.name)
+                .bind(&req.method)
+                .bind(&req.url)
+                .bind(&req.headers)
+                .bind(&req.params)
+                .bind(&req.body)
+                .bind(&req.auth)
+                .bind(r_idx as i64)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        for (r_idx, req) in coll.requests.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO request (id, folder_id, collection_id, name, method, url, headers, params, body, auth, sort_order, schema_version, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
+            )
+            .bind(&req.id)
+            .bind(&coll.id)
+            .bind(&req.name)
+            .bind(&req.method)
+            .bind(&req.url)
+            .bind(&req.headers)
+            .bind(&req.params)
+            .bind(&req.body)
+            .bind(&req.auth)
+            .bind(r_idx as i64)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    // Insert environments and variables
+    for env in &snapshot.environments {
+        sqlx::query(
+            "INSERT INTO environment (id, workspace_id, name, is_active) VALUES (?, ?, ?, ?)"
+        )
+        .bind(&env.id)
+        .bind(workspace_id)
+        .bind(&env.name)
+        .bind(0)
+        .execute(&mut *tx)
+        .await?;
+        for var in &env.variables {
+            sqlx::query(
+                "INSERT INTO variable (id, environment_id, key, value, is_secret) VALUES (?, ?, ?, ?, ?)"
+            )
+            .bind(&var.id)
+            .bind(&env.id)
+            .bind(&var.key)
+            .bind(&var.value)
+            .bind(if var.is_secret { 1 } else { 0 })
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+    sqlx::query("UPDATE environment SET is_active = 0 WHERE workspace_id = ?").bind(workspace_id).execute(&mut *tx).await?;
+    for env in &snapshot.environments {
+        if env.is_active {
+            sqlx::query("UPDATE environment SET is_active = 1 WHERE id = ?").bind(&env.id).execute(&mut *tx).await?;
+            break;
+        }
+    }
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Clear all user data (workspaces, collections, history, environments, etc.) and reset settings to defaults.

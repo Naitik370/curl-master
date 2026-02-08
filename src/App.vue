@@ -3,19 +3,26 @@
     <Titlebar 
       ref="titlebarRef"
       :workspace-id="activeWorkspaceId"
+      :sync-logged-in="!!syncConfig?.hasToken"
       @open-env-settings="showEnvModal = true"
       @env-changed="handleEnvChanged"
       @toggle-history="toggleHistory"
+      @open-sync="showSyncModal = true"
     />
+    <div v-if="syncConfig?.lastError" class="sync-failed-banner">
+      <span>Sync failed: {{ syncConfig.lastError }}</span>
+      <button type="button" class="sync-dismiss" @click="dismissSyncError">Dismiss</button>
+    </div>
     
     <div class="main-content">
       <!-- Outer: Vertical split (Sidebar LEFT | Work area RIGHT) -->
       <Splitpanes class="default-theme">
         <!-- Sidebar (LEFT) -->
-        <Pane :size="20" :min-size="10" :max-size="40">
+          <Pane :size="20" :min-size="10" :max-size="40">
           <CollectionsSidebar 
             ref="sidebarRef"
             v-model:workspace-id="activeWorkspaceId"
+            :sync-logged-in="!!syncConfig?.hasToken"
             @request-selected="handleRequestSelected"
             @history-selected="handleHistorySelected"
           />
@@ -81,6 +88,12 @@
       @updated="handleEnvUpdated"
       @data-cleared="handleDataCleared"
     />
+    <SyncModal 
+      :is-open="showSyncModal"
+      :sync-config="syncConfig"
+      @close="showSyncModal = false"
+      @sync-changed="fetchSyncConfig"
+    />
   </div>
 </template>
 
@@ -95,6 +108,7 @@ import CollectionsSidebar from './components/CollectionsSidebar.vue';
 import RequestBuilder from './components/RequestBuilder.vue';
 import ResponseViewer from './components/ResponseViewer.vue';
 import EnvironmentModal from './components/EnvironmentModal.vue';
+import SyncModal from './components/SyncModal.vue';
 import RequestTabs from "./components/RequestTabs.vue";
 
 const titlebarRef = ref<InstanceType<typeof Titlebar>>();
@@ -104,8 +118,28 @@ const sidebarRef = ref<InstanceType<typeof CollectionsSidebar> | null>(null);
 
 const activeWorkspaceId = ref('default');
 const showEnvModal = ref(false);
+const showSyncModal = ref(false);
+const syncConfig = ref<{ url: string; hasToken: boolean; lastError?: string | null; lastSyncedAt?: number | null } | null>(null);
 
 const workspaces = ref<any[]>([]);
+
+const fetchSyncConfig = async () => {
+  try {
+    const cfg = await invoke('get_sync_config') as { url: string; hasToken: boolean; lastError?: string | null; lastSyncedAt?: number | null };
+    syncConfig.value = cfg ? { url: cfg.url, hasToken: cfg.hasToken, lastError: cfg.lastError ?? null, lastSyncedAt: cfg.lastSyncedAt ?? null } : null;
+  } catch {
+    syncConfig.value = null;
+  }
+};
+
+const dismissSyncError = async () => {
+  try {
+    await invoke('clear_sync_error');
+    await fetchSyncConfig();
+  } catch {
+    // ignore
+  }
+};
 
 // Tab Management
 interface Tab {
@@ -309,6 +343,7 @@ const fetchWorkspaces = async () => {
 };
 
 onMounted(async () => {
+  await fetchSyncConfig();
   await fetchWorkspaces();
 });
 </script>
@@ -322,6 +357,29 @@ onMounted(async () => {
   flex-direction: column;
   background: #0a0a0a;
   overflow: hidden;
+}
+
+.sync-failed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(231, 76, 60, 0.15);
+  border-bottom: 1px solid rgba(231, 76, 60, 0.3);
+  color: #e74c3c;
+  font-size: 13px;
+}
+.sync-dismiss {
+  background: transparent;
+  border: 1px solid rgba(231, 76, 60, 0.5);
+  color: #e74c3c;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sync-dismiss:hover {
+  background: rgba(231, 76, 60, 0.2);
 }
 
 .main-content {

@@ -29,6 +29,11 @@
       </div>
       
       <div class="titlebar-actions">
+        <button class="titlebar-btn sync-btn" @click="$emit('openSync')" :title="syncLoggedIn ? 'Sync &amp; Account' : 'Sign in to sync'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+        </button>
         <button class="titlebar-btn history-btn" @click="$emit('toggleHistory')" title="Toggle History">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -70,13 +75,15 @@ import { invoke } from '@tauri-apps/api/core';
 const appWindow = getCurrentWindow();
 
 const props = defineProps<{
-  workspaceId: string
+  workspaceId: string;
+  syncLoggedIn?: boolean;
 }>();
 
 const emit = defineEmits<{
-  openEnvSettings: []
-  envChanged: []
-  toggleHistory: []
+  openEnvSettings: [];
+  envChanged: [];
+  toggleHistory: [];
+  openSync: [];
 }>();
 
 const environments = ref<any[]>([]);
@@ -309,7 +316,7 @@ defineExpose({
   background: #c0392b;
 }
 
-.history-btn {
+.sync-btn, .history-btn {
   width: 28px;
   height: 28px;
   margin-right: 4px;
