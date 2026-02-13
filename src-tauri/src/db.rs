@@ -755,59 +755,33 @@ pub async fn delete_request(id: &str) -> Result<(), sqlx::Error> {
 pub async fn get_collection_with_contents(collection_id: &str) -> Result<serde_json::Value, sqlx::Error> {
     let folders = get_folders(collection_id).await?;
     let all_requests = get_requests(collection_id).await?;
-    
-    let mut folder_list = Vec::new();
-    for (f_id, f_name, _) in folders {
-        let folder_requests: Vec<serde_json::Value> = all_requests
-            .iter()
-            .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id == &f_id)
-            .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| {
-                serde_json::json!({
-                    "id": r_id,
-                    "name": r_name,
-                    "method": r_method,
-                    "url": r_url,
-                    "headers": serde_json::from_str::<serde_json::Value>(r_headers).unwrap_or(serde_json::json!([])),
-                    "params": serde_json::from_str::<serde_json::Value>(r_params).unwrap_or(serde_json::json!([])),
-                    "body": serde_json::from_str::<serde_json::Value>(r_body).unwrap_or(serde_json::json!({"type": "none", "content": ""})),
-                    "auth": if r_auth.is_empty() {
-                        serde_json::json!({"type": "none"})
-                    } else {
-                        serde_json::from_str::<serde_json::Value>(r_auth).unwrap_or(serde_json::json!({"type": "none"}))
-                    }
-                })
-            })
-            .collect();
 
-        folder_list.push(serde_json::json!({
-            "id": f_id,
-            "name": f_name,
-            "requests": folder_requests
-        }));
-    }
-    
-    let root_requests: Vec<serde_json::Value> = all_requests
-        .into_iter()
-        .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id.is_empty())
-        .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| {
+    // Build folder list with their requests
+    let folder_list: Vec<serde_json::Value> = folders
+        .iter()
+        .map(|(f_id, f_name, _)| {
+            let folder_requests: Vec<serde_json::Value> = all_requests
+                .iter()
+                .filter(|r| &r.4 == f_id)
+                .map(request_row_to_json)
+                .collect();
+
             serde_json::json!({
-                "id": r_id,
-                "name": r_name,
-                "method": r_method,
-                "url": r_url,
-                "headers": serde_json::from_str::<serde_json::Value>(&r_headers).unwrap_or(serde_json::json!([])),
-                "params": serde_json::from_str::<serde_json::Value>(&r_params).unwrap_or(serde_json::json!([])),
-                "body": serde_json::from_str::<serde_json::Value>(&r_body).unwrap_or(serde_json::json!({"type": "none", "content": ""})),
-                "auth": if r_auth.is_empty() {
-                    serde_json::json!({"type": "none"})
-                } else {
-                    serde_json::from_str::<serde_json::Value>(&r_auth).unwrap_or(serde_json::json!({"type": "none"}))
-                }
+                "id": f_id,
+                "name": f_name,
+                "requests": folder_requests
             })
         })
         .collect();
-    
-    // We need the collection name too
+
+    // Root requests (no folder_id)
+    let root_requests: Vec<serde_json::Value> = all_requests
+        .iter()
+        .filter(|r| r.4.is_empty())
+        .map(request_row_to_json)
+        .collect();
+
+    // Fetch collection name
     let pool = get_pool().await?;
     let collection_name = sqlx::query_scalar::<_, String>("SELECT name FROM collection WHERE id = ?")
         .bind(collection_id)
@@ -820,6 +794,41 @@ pub async fn get_collection_with_contents(collection_id: &str) -> Result<serde_j
         "folders": folder_list,
         "requests": root_requests
     }))
+}
+
+/// Convert a raw request DB row (9-element tuple) into a JSON value.
+///
+/// Centralizes the repeated JSON mapping logic used in collection content queries.
+fn request_row_to_json(
+    row: &(String, String, String, String, String, String, String, String, String),
+) -> serde_json::Value {
+    let (r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth) = row;
+
+    serde_json::json!({
+        "id": r_id,
+        "name": r_name,
+        "method": r_method,
+        "url": r_url,
+        "headers": parse_json_or(r_headers, serde_json::json!([])),
+        "params": parse_json_or(r_params, serde_json::json!([])),
+        "body": parse_json_or(r_body, serde_json::json!({"type": "none", "content": ""})),
+        "auth": parse_auth_json(r_auth),
+    })
+}
+
+/// Parse a JSON string, returning `fallback` on failure.
+fn parse_json_or(s: &str, fallback: serde_json::Value) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(s).unwrap_or(fallback)
+}
+
+/// Parse auth JSON; returns `{"type": "none"}` for empty or invalid strings.
+fn parse_auth_json(s: &str) -> serde_json::Value {
+    if s.is_empty() {
+        serde_json::json!({"type": "none"})
+    } else {
+        serde_json::from_str::<serde_json::Value>(s)
+            .unwrap_or_else(|_| serde_json::json!({"type": "none"}))
+    }
 }
 
 pub async fn export_workspace(workspace_id: &str) -> Result<serde_json::Value, sqlx::Error> {

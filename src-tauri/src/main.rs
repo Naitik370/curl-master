@@ -43,7 +43,6 @@ fn main() {
             commands::delete_request,
             commands::get_workspaces,
             commands::create_workspace,
-            commands::create_workspace,
             commands::rename_workspace,
             commands::get_history,
             commands::clear_history,
