@@ -6,11 +6,21 @@ use crate::{db, models::ImportCollection};
 
 /// Create a new collection within a workspace.
 ///
+/// Returns an error if a collection with the same name already exists in this workspace.
 /// Automatically assigns the next `sort_order` based on existing collection count.
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn create_collection(name: String, workspaceId: String) -> Result<String, String> {
     println!("Creating collection: {} in workspace: {}", name, workspaceId);
+
+    // Duplicate name check (case-insensitive)
+    let exists = db::collection_name_exists_in_workspace(&workspaceId, &name)
+        .await
+        .map_err(|e| e.to_string())?;
+    if exists {
+        return Err(format!("A collection named \"{}\" already exists in this workspace.", name));
+    }
+
     let id = uuid::Uuid::new_v4().to_string();
 
     let collections = db::get_collections(&workspaceId)
@@ -44,6 +54,9 @@ pub async fn create_folder(name: String, collectionId: String) -> Result<String,
 }
 
 /// Save a new request under a collection (optionally inside a folder).
+///
+/// Returns an error if a request with the same name AND method already exists
+/// in this collection. Same name with a different method is allowed.
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn save_request(
@@ -57,6 +70,17 @@ pub async fn save_request(
     body: String,
     auth: Option<String>,
 ) -> Result<String, String> {
+    // Duplicate name+method check within the same collection
+    let exists = db::request_name_method_exists_in_collection(&collectionId, &name, &method)
+        .await
+        .map_err(|e| e.to_string())?;
+    if exists {
+        return Err(format!(
+            "A {} request named \"{}\" already exists in this collection.",
+            method, name
+        ));
+    }
+
     let id = uuid::Uuid::new_v4().to_string();
 
     let requests = db::get_requests(&collectionId)
@@ -191,6 +215,17 @@ pub async fn get_collections_with_folders(
 #[tauri::command]
 pub async fn import_collection(collection: ImportCollection) -> Result<String, String> {
     db::import_collection(collection)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Sync-import a collection: replaces any existing collection with the same name.
+///
+/// Used by the GitHub pull flow to update workspace contents without creating
+/// duplicate collections.
+#[tauri::command]
+pub async fn sync_import_collection(collection: ImportCollection) -> Result<String, String> {
+    db::sync_import_collection(collection)
         .await
         .map_err(|e| e.to_string())
 }

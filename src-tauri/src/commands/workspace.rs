@@ -34,8 +34,17 @@ pub async fn get_workspaces() -> Result<serde_json::Value, String> {
 }
 
 /// Create a new workspace with a generated UUID.
+///
+/// Returns an error if a workspace with the same name already exists.
 #[tauri::command]
 pub async fn create_workspace(name: String) -> Result<String, String> {
+    let exists = db::workspace_name_exists(&name)
+        .await
+        .map_err(|e| e.to_string())?;
+    if exists {
+        return Err(format!("A workspace named \"{}\" already exists.", name));
+    }
+
     let id = uuid::Uuid::new_v4().to_string();
     db::create_workspace(&id, &name)
         .await
@@ -44,9 +53,18 @@ pub async fn create_workspace(name: String) -> Result<String, String> {
 }
 
 /// Rename an existing workspace.
+///
+/// Returns an error if another workspace with the same name already exists.
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn rename_workspace(workspaceId: String, name: String) -> Result<(), String> {
+    let exists = db::workspace_name_exists(&name)
+        .await
+        .map_err(|e| e.to_string())?;
+    if exists {
+        return Err(format!("A workspace named \"{}\" already exists.", name));
+    }
+
     db::update_workspace_name(&workspaceId, &name)
         .await
         .map_err(|e| e.to_string())

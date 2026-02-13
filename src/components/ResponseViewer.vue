@@ -31,9 +31,15 @@
           </div>
         </div>
         
-        <button class="copy-btn" @click="copyResponse">
-          📋 Copy
-        </button>
+        <div class="header-actions">
+          <button class="copy-btn" @click="copyResponse" title="Copy Response">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 1.5H3a2 2 0 00-2 2V14a2 2 0 002 2h10a2 2 0 002-2V3.5a2 2 0 00-2-2h-1v1h1a1 1 0 011 1V14a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1h1v-1z"/>
+              <path d="M9.5 1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5v-1a.5.5 0 01.5-.5h3z"/>
+            </svg>
+            Copy
+          </button>
+        </div>
       </div>
 
       <div class="response-tabs">
@@ -61,13 +67,27 @@
           >
             Raw
           </button>
+          <button 
+            :class="['mode-btn', { active: viewMode === 'tree' }]"
+            @click="viewMode = 'tree'"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right:3px">
+              <path d="M1 1h4v4H1V1zm6 0h4v4H7V1zm-6 6h4v4H1V7zm6 0h4v4H7V7zm6-6h4v4h-4V1zm0 6h4v4h-4V7z"/>
+            </svg>
+            Tree
+          </button>
         </div>
       </div>
 
       <div class="response-body">
         <!-- Body Tab -->
         <div v-show="activeTab === 'body'" class="tab-content body-tab">
-          <div class="code-container">
+          <!-- Tree View -->
+          <div v-if="viewMode === 'tree' && isJson" class="tree-container">
+            <JsonTreeViewer :data="getBodyText()" />
+          </div>
+          <!-- Pretty / Raw View -->
+          <div v-else class="code-container">
             <pre :class="['response-pre', `language-${detectedLanguage}`]"><code ref="codeElement">{{ getFormattedBody() }}</code></pre>
           </div>
         </div>
@@ -100,6 +120,7 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-markup'; // for HTML/XML
 import 'prismjs/themes/prism-tomorrow.css';
+import JsonTreeViewer from './JsonTreeViewer.vue';
 
 interface ResponseData {
   status: number;
@@ -405,13 +426,21 @@ defineExpose({
   font-weight: 600;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .copy-btn {
-  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
   color: #888;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -420,6 +449,14 @@ defineExpose({
   border-color: #667eea;
   color: #667eea;
   background: rgba(102, 126, 234, 0.05);
+}
+
+.tree-container {
+  height: 100%;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  margin: 16px;
+  overflow: hidden;
 }
 
 .response-tabs {

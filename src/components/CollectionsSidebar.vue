@@ -1,15 +1,9 @@
 <template>
-  <div :class="['collections-sidebar', { collapsed: isCollapsed }]">
+  <div class="collections-sidebar">
     <!-- Sidebar Header -->
     <div class="sidebar-header">
       <div class="header-content">
-        <h2 v-if="!isCollapsed">Collections</h2>
-        <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path v-if="isCollapsed" d="M6 12l4-4-4-4v8z"/>
-            <path v-else d="M10 6l-4 4-4-4h8z"/>
-          </svg>
-        </button>
+        <h2>Collections</h2>
       </div>
       <div class="sidebar-actions">
         <button class="refresh-btn" @click="fetchCollections" :class="{ 'rotating': isLoading }" title="Refresh">
@@ -18,12 +12,12 @@
             <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658a.25.25 0 01-.41-.192z"/>
           </svg>
         </button>
-        <button v-if="!isCollapsed" class="sync-btn" @click="showSyncSettings = true" title="GitHub Sync">
+        <button class="sync-btn" @click="showSyncSettings = true" title="GitHub Sync">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM4.5 7.5a.5.5 0 01.5.5v2.475l.646-.646a.5.5 0 11.708.708l-1.5 1.5a.5.5 0 01-.708 0l-1.5-1.5a.5.5 0 11.708-.708l.646.646V8a.5.5 0 01.5-.5zm7 1a.5.5 0 01-.5-.5V5.525l-.646.646a.5.5 0 11-.708-.708l1.5-1.5a.5.5 0 01.708 0l1.5 1.5a.5.5 0 11-.708.708l-.646-.646V8a.5.5 0 01-.5.5z"/>
           </svg>
         </button>
-        <button v-if="!isCollapsed" class="new-btn" @click="showAddSelection = true" title="New Collection">
+        <button class="new-btn" @click="showAddSelection = true" title="New Collection">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <path d="M7 0v14M0 7h14" stroke="currentColor" stroke-width="2"/>
           </svg>
@@ -32,7 +26,7 @@
     </div>
 
     <!-- Sidebar Tabs -->
-    <div v-if="!isCollapsed" class="sidebar-tabs">
+    <div class="sidebar-tabs">
       <button 
         :class="['tab-btn', { active: activeTab === 'collections' }]" 
         @click="activeTab = 'collections'"
@@ -48,7 +42,7 @@
     </div>
 
     <!-- Sidebar Content -->
-    <div v-if="!isCollapsed" class="sidebar-body">
+    <div class="sidebar-body">
       <!-- Collections View -->
       <div v-show="activeTab === 'collections'" class="sidebar-content">
         <!-- Workspace Selector -->
@@ -185,14 +179,6 @@
       </div>
     </div>
 
-    <!-- Collapsed State -->
-    <div v-else class="collapsed-icons">
-      <button class="icon-btn" title="Collections">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M0 3a2 2 0 012-2h6l2 3h8a2 2 0 012 2v10a2 2 0 01-2 2H2a2 2 0 01-2-2V3z"/>
-        </svg>
-      </button>
-    </div>
 
     <!-- Custom Modal -->
     <Modal 
@@ -282,7 +268,6 @@ const activeTab = ref<'collections' | 'history'>('collections');
 const showImportModal = ref(false);
 const showAddSelection = ref(false);
 const showSyncSettings = ref(false);
-const isSyncing = ref(false);
 
 const handleTypeSelect = (type: 'blank' | 'import') => {
   showAddSelection.value = false;
@@ -300,7 +285,7 @@ const handleImported = async (collectionId: string) => {
   }
 };
 
-const isCollapsed = ref(false);
+
 // currentWorkspace is now managed by parent via v-model:workspace-id
 const localWorkspaceId = computed({
   get: () => props.workspaceId,
@@ -355,9 +340,7 @@ onMounted(async () => {
   await fetchCollections();
 });
 
-const toggleCollapse = () => {
-  isCollapsed.value = !isCollapsed.value;
-};
+
 
 const toggleCollection = (id: string) => {
   const index = expandedCollections.value.indexOf(id);
@@ -607,9 +590,7 @@ defineExpose({
   overflow: hidden;
 }
 
-.collections-sidebar.collapsed {
-  min-width: 50px;
-}
+
 
 .sidebar-header {
   padding: 16px;
@@ -634,20 +615,7 @@ defineExpose({
   margin: 0;
 }
 
-.collapse-btn {
-  padding: 6px;
-  background: transparent;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
 
-.collapse-btn:hover {
-  background: #2a2a2a;
-  color: #aaa;
-}
 
 .sidebar-actions {
   display: flex;
@@ -1063,26 +1031,4 @@ defineExpose({
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
-.collapsed-icons {
-  padding: 16px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.icon-btn {
-  padding: 10px;
-  background: transparent;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.icon-btn:hover {
-  background: #2a2a2a;
-  color: #667eea;
-}
 </style>

@@ -119,12 +119,24 @@
         </div>
 
         <div class="body-editor">
+          <div v-if="bodyType === 'json'" class="body-toolbar">
+            <button class="prettify-btn" @click="prettifyBody" title="Format JSON (Ctrl+Shift+F)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/>
+                <polyline points="8 6 2 12 8 18"/>
+              </svg>
+              Prettify
+            </button>
+            <span v-if="bodyJsonError" class="body-json-error">{{ bodyJsonError }}</span>
+            <span v-else-if="bodyContent.trim()" class="body-json-valid">✓ Valid JSON</span>
+          </div>
           <textarea 
             v-if="bodyType === 'raw' || bodyType === 'json'"
             v-model="bodyContent"
             class="body-textarea"
             @mousemove="handleKVMouseMove"
             @mouseleave="hideVariableTooltip"
+            @keydown.ctrl.shift.f.prevent="prettifyBody"
             :placeholder="getBodyPlaceholder"
           ></textarea>
           
@@ -145,12 +157,12 @@
         </div>
 
         <div v-if="authType === 'basic'" class="auth-fields">
-          <input v-model="authUsername" placeholder="Username" class="auth-input" />
-          <input v-model="authPassword" type="password" placeholder="Password" class="auth-input" />
+          <input v-model="authUsername" placeholder="Username" class="auth-input" @mousemove="handleKVMouseMove" @mouseleave="hideVariableTooltip" />
+          <input v-model="authPassword" type="password" placeholder="Password" class="auth-input" @mousemove="handleKVMouseMove" @mouseleave="hideVariableTooltip" />
         </div>
 
         <div v-if="authType === 'bearer'" class="auth-fields">
-          <input v-model="authToken" placeholder="Token" class="auth-input" />
+          <input v-model="authToken" placeholder="Token" class="auth-input" @mousemove="handleKVMouseMove" @mouseleave="hideVariableTooltip" />
         </div>
       </div>
     </div>
@@ -352,6 +364,33 @@ const getBodyPlaceholder = computed(() => {
   }
   return 'Enter request body...';
 });
+
+const bodyJsonError = ref('');
+
+// Validate JSON as user types
+watch(bodyContent, (val) => {
+  if (bodyType.value !== 'json' || !val.trim()) {
+    bodyJsonError.value = '';
+    return;
+  }
+  try {
+    JSON.parse(val);
+    bodyJsonError.value = '';
+  } catch (e: any) {
+    bodyJsonError.value = e.message?.replace(/^JSON\.parse: /, '') || 'Invalid JSON';
+  }
+});
+
+const prettifyBody = () => {
+  if (!bodyContent.value.trim()) return;
+  try {
+    const parsed = JSON.parse(bodyContent.value);
+    bodyContent.value = JSON.stringify(parsed, null, 2);
+    bodyJsonError.value = '';
+  } catch (e: any) {
+    bodyJsonError.value = e.message?.replace(/^JSON\.parse: /, '') || 'Invalid JSON';
+  }
+};
 
 const sendRequest = async () => {
   if (!url.value || isSending.value) return;
@@ -1025,6 +1064,62 @@ defineExpose({
 
 .body-editor {
   flex: 1;
+}
+
+.body-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #242424;
+  border: 1px solid #3a3a3a;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.body-toolbar + .body-textarea {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.prettify-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  border-radius: 4px;
+  color: #667eea;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.prettify-btn:hover {
+  background: rgba(102, 126, 234, 0.18);
+  border-color: #667eea;
+  transform: translateY(-1px);
+}
+
+.body-json-error {
+  font-size: 11px;
+  color: #ff6b6b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.body-json-error::before {
+  content: '✕';
+  font-weight: 700;
+}
+
+.body-json-valid {
+  font-size: 11px;
+  color: #48bb78;
 }
 
 .body-textarea {

@@ -327,6 +327,32 @@ pub async fn create_collection(
     Ok(())
 }
 
+/// Check if a collection with the given name already exists in a workspace.
+pub async fn collection_name_exists_in_workspace(workspace_id: &str, name: &str) -> Result<bool, sqlx::Error> {
+    let pool = get_pool().await?;
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM collection WHERE workspace_id = ? AND LOWER(name) = LOWER(?)"
+    )
+    .bind(workspace_id)
+    .bind(name)
+    .fetch_one(&pool)
+    .await?;
+    Ok(count.0 > 0)
+}
+
+/// Find a collection ID by name within a workspace (for sync/replace).
+pub async fn find_collection_id_by_name(workspace_id: &str, name: &str) -> Result<Option<String>, sqlx::Error> {
+    let pool = get_pool().await?;
+    let result = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM collection WHERE workspace_id = ? AND LOWER(name) = LOWER(?) LIMIT 1"
+    )
+    .bind(workspace_id)
+    .bind(name)
+    .fetch_optional(&pool)
+    .await?;
+    Ok(result)
+}
+
 pub async fn get_collections(workspace_id: &str) -> Result<Vec<(String, String, String)>, sqlx::Error> {
     let pool = get_pool().await?;
 
@@ -417,6 +443,27 @@ pub async fn save_request(
     Ok(())
 }
 
+/// Check if a request with the given name+method already exists in a collection.
+///
+/// Same name but different method is allowed (e.g. GET /users and POST /users).
+/// Same name + same method in different collections is also allowed.
+pub async fn request_name_method_exists_in_collection(
+    collection_id: &str,
+    name: &str,
+    method: &str,
+) -> Result<bool, sqlx::Error> {
+    let pool = get_pool().await?;
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM request WHERE collection_id = ? AND LOWER(name) = LOWER(?) AND UPPER(method) = UPPER(?)"
+    )
+    .bind(collection_id)
+    .bind(name)
+    .bind(method)
+    .fetch_one(&pool)
+    .await?;
+    Ok(count.0 > 0)
+}
+
 pub async fn update_request(
     id: &str,
     name: &str,
@@ -499,6 +546,18 @@ pub async fn create_workspace(id: &str, name: &str) -> Result<String, sqlx::Erro
     .await?;
 
     Ok(id.to_string())
+}
+
+/// Check if a workspace with the given name already exists.
+pub async fn workspace_name_exists(name: &str) -> Result<bool, sqlx::Error> {
+    let pool = get_pool().await?;
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM workspace WHERE LOWER(name) = LOWER(?)"
+    )
+    .bind(name)
+    .fetch_one(&pool)
+    .await?;
+    Ok(count.0 > 0)
 }
 
 pub async fn get_workspaces() -> Result<Vec<(String, String)>, sqlx::Error> {
@@ -1025,6 +1084,20 @@ pub async fn import_collection(data: ImportCollection) -> Result<String, sqlx::E
     tx.commit().await?;
 
     Ok(collection_id)
+}
+
+/// Sync-import a collection: if a collection with the same name exists in the
+/// workspace, delete it first, then import the new data. This prevents
+/// duplicates when pulling from GitHub.
+pub async fn sync_import_collection(data: ImportCollection) -> Result<String, sqlx::Error> {
+    // Check if a collection with this name already exists in the workspace
+    if let Some(existing_id) = find_collection_id_by_name(&data.workspace_id, &data.name).await? {
+        // Delete the existing collection and its contents
+        delete_collection(&existing_id).await?;
+    }
+
+    // Now import fresh
+    import_collection(data).await
 }
 
 fn import_folder_recursive_internal<'a>(

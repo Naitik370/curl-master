@@ -85,6 +85,20 @@ fn substitute_variables(config: &mut RequestConfig, variables: &[(String, String
             }
             _ => {}
         }
+
+        // Auth (Bearer token, Basic username/password)
+        if let Some(auth) = &mut config.auth {
+            match auth {
+                AuthConfig::Bearer { token } => {
+                    *token = token.replace(&pattern, value);
+                }
+                AuthConfig::Basic { username, password } => {
+                    *username = username.replace(&pattern, value);
+                    *password = password.replace(&pattern, value);
+                }
+                AuthConfig::None => {}
+            }
+        }
     }
 }
 

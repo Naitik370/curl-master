@@ -56,6 +56,7 @@ fn main() {
             commands::delete_github_token,
             commands::sync_to_github,
             commands::sync_from_github,
+            commands::sync_import_collection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
