@@ -35,28 +35,31 @@
           </svg>
         </button>
         
-        <div class="divider"></div>
+        <!-- Only show custom window controls on non-macOS (macOS uses native traffic lights) -->
+        <template v-if="!isMacOS">
+          <div class="divider"></div>
 
-        <button class="titlebar-btn" @click="minimizeWindow" title="Minimize">
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <rect x="0" y="5" width="12" height="2" fill="currentColor"/>
-          </svg>
-        </button>
-        <button class="titlebar-btn" @click="maximizeWindow" :title="isMaximized ? 'Restore' : 'Maximize'">
-          <svg v-if="!isMaximized" width="12" height="12" viewBox="0 0 12 12">
-            <rect x="1.5" y="1.5" width="9" height="9" stroke="currentColor" stroke-width="1.2" fill="none"/>
-          </svg>
-          <svg v-else width="12" height="12" viewBox="0 0 12 12">
-            <rect x="3.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M1.5 10.5h7v-7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M1.5 3.5v7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-          </svg>
-        </button>
-        <button class="titlebar-btn close-btn" @click="closeWindow" title="Close">
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <path d="M1 1 L11 11 M11 1 L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+          <button class="titlebar-btn" @click="minimizeWindow" title="Minimize">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <rect x="0" y="5" width="12" height="2" fill="currentColor"/>
+            </svg>
+          </button>
+          <button class="titlebar-btn" @click="maximizeWindow" :title="isMaximized ? 'Restore' : 'Maximize'">
+            <svg v-if="!isMaximized" width="12" height="12" viewBox="0 0 12 12">
+              <rect x="1.5" y="1.5" width="9" height="9" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            </svg>
+            <svg v-else width="12" height="12" viewBox="0 0 12 12">
+              <rect x="3.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M1.5 10.5h7v-7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M1.5 3.5v7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            </svg>
+          </button>
+          <button class="titlebar-btn close-btn" @click="closeWindow" title="Close">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M1 1 L11 11 M11 1 L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </template>
       </div>
     </div>
   </div>
@@ -82,6 +85,7 @@ const emit = defineEmits<{
 const environments = ref<any[]>([]);
 const activeEnvId = ref<string | null>(null);
 const isMaximized = ref(false);
+const isMacOS = ref(navigator.userAgent.includes('Mac'));
 
 const fetchEnvironments = async () => {
   try {
@@ -189,6 +193,13 @@ defineExpose({
   position: relative;
   z-index: 20;
   pointer-events: none; /* Let clicks pass through to drag region */
+}
+
+/* macOS: add left padding for native traffic lights */
+@supports (-webkit-app-region: drag) {
+  .titlebar-content {
+    padding-left: 80px;
+  }
 }
 
 /* Enable interactivity for specific controls */
