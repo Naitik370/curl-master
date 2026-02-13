@@ -752,6 +752,90 @@ pub async fn delete_request(id: &str) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+pub async fn get_collection_with_contents(collection_id: &str) -> Result<serde_json::Value, sqlx::Error> {
+    let folders = get_folders(collection_id).await?;
+    let all_requests = get_requests(collection_id).await?;
+    
+    let mut folder_list = Vec::new();
+    for (f_id, f_name, _) in folders {
+        let folder_requests: Vec<serde_json::Value> = all_requests
+            .iter()
+            .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id == &f_id)
+            .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| {
+                serde_json::json!({
+                    "id": r_id,
+                    "name": r_name,
+                    "method": r_method,
+                    "url": r_url,
+                    "headers": serde_json::from_str::<serde_json::Value>(r_headers).unwrap_or(serde_json::json!([])),
+                    "params": serde_json::from_str::<serde_json::Value>(r_params).unwrap_or(serde_json::json!([])),
+                    "body": serde_json::from_str::<serde_json::Value>(r_body).unwrap_or(serde_json::json!({"type": "none", "content": ""})),
+                    "auth": if r_auth.is_empty() {
+                        serde_json::json!({"type": "none"})
+                    } else {
+                        serde_json::from_str::<serde_json::Value>(r_auth).unwrap_or(serde_json::json!({"type": "none"}))
+                    }
+                })
+            })
+            .collect();
+
+        folder_list.push(serde_json::json!({
+            "id": f_id,
+            "name": f_name,
+            "requests": folder_requests
+        }));
+    }
+    
+    let root_requests: Vec<serde_json::Value> = all_requests
+        .into_iter()
+        .filter(|(_, _, _, _, r_folder_id, _, _, _, _)| r_folder_id.is_empty())
+        .map(|(r_id, r_name, r_method, r_url, _, r_headers, r_params, r_body, r_auth)| {
+            serde_json::json!({
+                "id": r_id,
+                "name": r_name,
+                "method": r_method,
+                "url": r_url,
+                "headers": serde_json::from_str::<serde_json::Value>(&r_headers).unwrap_or(serde_json::json!([])),
+                "params": serde_json::from_str::<serde_json::Value>(&r_params).unwrap_or(serde_json::json!([])),
+                "body": serde_json::from_str::<serde_json::Value>(&r_body).unwrap_or(serde_json::json!({"type": "none", "content": ""})),
+                "auth": if r_auth.is_empty() {
+                    serde_json::json!({"type": "none"})
+                } else {
+                    serde_json::from_str::<serde_json::Value>(&r_auth).unwrap_or(serde_json::json!({"type": "none"}))
+                }
+            })
+        })
+        .collect();
+    
+    // We need the collection name too
+    let pool = get_pool().await?;
+    let collection_name = sqlx::query_scalar::<_, String>("SELECT name FROM collection WHERE id = ?")
+        .bind(collection_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(serde_json::json!({
+        "id": collection_id,
+        "name": collection_name,
+        "folders": folder_list,
+        "requests": root_requests
+    }))
+}
+
+pub async fn export_workspace(workspace_id: &str) -> Result<serde_json::Value, sqlx::Error> {
+    let collections = get_collections(workspace_id).await?;
+    let mut collection_data = Vec::new();
+    
+    for (id, _, _) in collections {
+        collection_data.push(get_collection_with_contents(&id).await?);
+    }
+    
+    Ok(serde_json::json!({
+        "workspace_id": workspace_id,
+        "collections": collection_data
+    }))
+}
+
 // History operations
 pub async fn add_history_entry(
     id: &str,

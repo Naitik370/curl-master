@@ -5,6 +5,7 @@ mod http;
 mod db;
 mod models;
 mod commands;
+mod github;
 
 
 
@@ -51,6 +52,11 @@ fn main() {
             commands::import_collection,
             commands::update_request,
             commands::clear_all_data,
+            commands::get_github_token,
+            commands::save_github_token,
+            commands::delete_github_token,
+            commands::sync_to_github,
+            commands::sync_from_github,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

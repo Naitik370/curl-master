@@ -25,6 +25,8 @@ futures = "0.3"
 dashmap = "5.5"
 lazy_static = "1.4"
 chrono = "0.4"
+keyring = "2.3"
+base64 = "0.22"
 
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem

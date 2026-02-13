@@ -1,4 +1,5 @@
 use crate::{db, http, models::*};
+use base64::Engine;
 use std::collections::HashMap;
 
 /// Send HTTP request with variable substitution
@@ -563,10 +564,91 @@ pub async fn import_collection(collection: ImportCollection) -> Result<String, S
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_github_token() -> Result<String, String> {
+    crate::github::GithubClient::new().get_token()
+}
+
+#[tauri::command]
+pub async fn save_github_token(token: String) -> Result<(), String> {
+    crate::github::GithubClient::new().store_token(&token)
+}
+
+#[tauri::command]
+pub async fn delete_github_token() -> Result<(), String> {
+    crate::github::GithubClient::new().delete_token()
+}
+
+#[tauri::command]
+pub async fn sync_to_github(workspace_id: String, mut repo: String, mut path: String, mut branch: String) -> Result<(), String> {
+    let client = crate::github::GithubClient::new();
+    
+    // Trim inputs
+    repo = repo.trim().trim_start_matches('/').trim_end_matches('/').to_string();
+    path = path.trim().trim_start_matches('/').to_string();
+    branch = branch.trim().to_string();
+
+    if branch.is_empty() { branch = "main".to_string(); }
+    
+    // 1. Export workspace data
+    let data = db::export_workspace(&workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    
+    // 2. Get current SHA if file exists
+    let sha = match client.fetch_file(&repo, &path, &branch).await? {
+        Some(res) => Some(res.sha),
+        None => None, // File doesn't exist yet, but repo exists (verified inside fetch_file)
+    };
+    
+    // 3. Push to GitHub
+    client.push_file(
+        &repo, 
+        &path, 
+        &branch, 
+        &content, 
+        &format!("Sync from CurlMaster - {}", chrono::Utc::now()), 
+        sha.as_deref()
+    ).await?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_from_github(_workspace_id: String, mut repo: String, mut path: String, mut branch: String) -> Result<serde_json::Value, String> {
+    let client = crate::github::GithubClient::new();
+    
+    // Trim inputs
+    repo = repo.trim().trim_start_matches('/').trim_end_matches('/').to_string();
+    path = path.trim().trim_start_matches('/').to_string();
+    branch = branch.trim().to_string();
+
+    if branch.is_empty() { branch = "main".to_string(); }
+
+    // 1. Fetch from GitHub
+    let res = match client.fetch_file(&repo, &path, &branch).await? {
+        Some(res) => res,
+        None => return Err(format!("The sync file '{}' was not found in the repository '{}'.", path, repo)),
+    };
+    
+    // 2. Decode content
+    let decoded_bytes = base64::engine::general_purpose::STANDARD
+        .decode(res.content.replace("\n", "").replace("\r", ""))
+        .map_err(|e| e.to_string())?;
+    
+    let decoded_str = String::from_utf8(decoded_bytes).map_err(|e| e.to_string())?;
+    
+    // 3. Parse JSON
+    let data: serde_json::Value = serde_json::from_str(&decoded_str).map_err(|e| e.to_string())?;
+    
+    // 4. Return the data to frontend for user to decide merge or overwrite
+    Ok(data)
+}
+
 /// Clear all app data (workspaces, collections, history, environments, settings) and reset to defaults.
 #[tauri::command]
 pub async fn clear_all_data() -> Result<(), String> {
     db::clear_all_data().await.map_err(|e| e.to_string())
 }
-
-

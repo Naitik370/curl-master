@@ -183,6 +183,7 @@ pub struct HistoryItem {
 // Import models
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportRequest {
+    pub id: Option<String>,
     pub name: String,
     pub method: String,
     pub url: String,
@@ -194,6 +195,7 @@ pub struct ImportRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportFolder {
+    pub id: Option<String>,
     pub name: String,
     pub requests: Vec<ImportRequest>,
     pub folders: Vec<ImportFolder>,
@@ -201,6 +203,7 @@ pub struct ImportFolder {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportCollection {
+    pub id: Option<String>,
     pub name: String,
     pub workspace_id: String,
     pub folders: Vec<ImportFolder>,

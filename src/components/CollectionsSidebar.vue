@@ -18,6 +18,11 @@
             <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658a.25.25 0 01-.41-.192z"/>
           </svg>
         </button>
+        <button v-if="!isCollapsed" class="sync-btn" @click="showSyncSettings = true" title="GitHub Sync">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM4.5 7.5a.5.5 0 01.5.5v2.475l.646-.646a.5.5 0 11.708.708l-1.5 1.5a.5.5 0 01-.708 0l-1.5-1.5a.5.5 0 11.708-.708l.646.646V8a.5.5 0 01.5-.5zm7 1a.5.5 0 01-.5-.5V5.525l-.646.646a.5.5 0 11-.708-.708l1.5-1.5a.5.5 0 01.708 0l1.5 1.5a.5.5 0 11-.708.708l-.646-.646V8a.5.5 0 01-.5.5z"/>
+          </svg>
+        </button>
         <button v-if="!isCollapsed" class="new-btn" @click="showAddSelection = true" title="New Collection">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <path d="M7 0v14M0 7h14" stroke="currentColor" stroke-width="2"/>
@@ -202,7 +207,6 @@
       @confirm="handleModalConfirm"
       @cancel="modal.show = false"
     />
-    />
 
     <!-- Postman Import Modal -->
     <ImportPostmanModal 
@@ -215,8 +219,16 @@
     <!-- Add Collection Type Modal -->
     <AddCollectionTypeModal
       :is-open="showAddSelection"
-      @close="showAddSelection = false"
       @select="handleTypeSelect"
+      @close="showAddSelection = false"
+    />
+    
+    <!-- GitHub Sync Settings Modal -->
+    <SyncSettings 
+      :is-open="showSyncSettings"
+      :workspace-id="workspaceId"
+      @close="showSyncSettings = false"
+      @saved="fetchCollections"
     />
   </div>
 </template>
@@ -228,6 +240,7 @@ import Modal from './Modal.vue';
 import RequestHistory from './RequestHistory.vue';
 import ImportPostmanModal from './ImportPostmanModal.vue';
 import AddCollectionTypeModal from './AddCollectionTypeModal.vue';
+import SyncSettings from './SyncSettings.vue';
 
 interface Request {
   id: string;
@@ -268,6 +281,8 @@ const emit = defineEmits<{
 const activeTab = ref<'collections' | 'history'>('collections');
 const showImportModal = ref(false);
 const showAddSelection = ref(false);
+const showSyncSettings = ref(false);
+const isSyncing = ref(false);
 
 const handleTypeSelect = (type: 'blank' | 'import') => {
   showAddSelection.value = false;
@@ -685,6 +700,25 @@ defineExpose({
   border-color: #667eea;
   color: #667eea;
   background: rgba(102, 126, 234, 0.05);
+}
+
+.sync-btn {
+  padding: 6px;
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sync-btn:hover {
+  border-color: #48bb78;
+  color: #48bb78;
+  background: rgba(72, 187, 120, 0.05);
 }
 
 .sidebar-content {
